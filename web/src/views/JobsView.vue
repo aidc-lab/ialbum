@@ -1,0 +1,15 @@
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Refresh, Timer } from '@element-plus/icons-vue'
+import { api } from '../lib/api'
+interface Job{id:string;type:string;state:string;attempts:number;maxAttempts:number;lastError:string;payload?:{mediaId?:string};createdAt:string;updatedAt:string}
+const items=ref<Job[]>([]);const loading=ref(false);const filter=ref('');let timer=0
+const labels:Record<string,string>={scan:'目录扫描',backup:'备份复制','mirror-delete':'镜像删除',thumbnail:'生成预览'}
+async function load(){loading.value=true;try{items.value=(await api<Job[]|null>(`/jobs${filter.value?`?state=${filter.value}`:''}`))||[]}catch(error){ElMessage.error((error as Error).message)}finally{loading.value=false}}
+async function retry(id:string){try{await api(`/jobs/${id}/retry`,{method:'POST'});ElMessage.success('任务已重新加入队列');await load()}catch(error){ElMessage.error((error as Error).message)}}
+async function cancelDelete(job:Job){if(!job.payload?.mediaId)return;try{await api(`/media/${job.payload.mediaId}/pending-delete/cancel`,{method:'POST'});ElMessage.success('已长期保留这份备份');await load()}catch(error){ElMessage.error((error as Error).message)}}
+async function resumeDelete(job:Job){if(!job.payload?.mediaId)return;try{await api(`/media/${job.payload.mediaId}/pending-delete/resume`,{method:'POST'});ElMessage.success('已恢复镜像删除检查');await load()}catch(error){ElMessage.error((error as Error).message)}}
+onMounted(()=>{load();timer=window.setInterval(load,5000)});onBeforeUnmount(()=>clearInterval(timer))
+</script>
+<template><section class="page"><header class="page-heading"><div><div class="eyebrow">Activity</div><h1>任务中心</h1><p class="subtitle">扫描、备份和媒体处理都会在这里留下可恢复的记录。</p></div><el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button></header><div class="toolbar"><el-radio-group v-model="filter" @change="load"><el-radio-button value="">全部</el-radio-button><el-radio-button value="running">进行中</el-radio-button><el-radio-button value="failed">失败</el-radio-button><el-radio-button value="waiting-auth">待授权</el-radio-button></el-radio-group></div><div v-if="items.length" class="surface"><div v-for="job in items" :key="job.id" class="job-row"><strong>{{labels[job.type]||job.type}}</strong><div><span><i class="status-dot" :class="job.state"/>{{job.state}}</span><p v-if="job.lastError" class="muted" style="margin:5px 0 0;font-size:12px">{{job.lastError}}</p></div><span class="muted" style="font-size:12px">尝试 {{job.attempts}} / {{job.maxAttempts}}</span><div><el-button v-if="job.type==='mirror-delete'&&['pending','waiting-auth'].includes(job.state)" size="small" @click="cancelDelete(job)">长期保留</el-button><el-button v-else-if="job.type==='mirror-delete'&&job.state==='cancelled'" size="small" @click="resumeDelete(job)">恢复删除</el-button><el-button v-else-if="['failed','waiting-auth','cancelled'].includes(job.state)" size="small" @click="retry(job.id)">重试</el-button></div></div></div><div v-else class="surface empty-state"><div class="empty-icon"><el-icon><Timer/></el-icon></div><h2>目前没有任务</h2><p>创建或扫描相册后，索引、预览和备份任务会出现在这里。</p></div></section></template>

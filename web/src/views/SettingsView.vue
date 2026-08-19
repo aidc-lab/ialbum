@@ -1,0 +1,14 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { api, jsonBody } from '../lib/api'
+import { useAuthStore } from '../stores/auth'
+interface Settings{listen:string;dataDir:string;maxUploadBytes:number;cacheMaxBytes:number;maxVideoStagingBytes:number;ffmpegAvailable:boolean;defaultScanIntervalSeconds:number;serverTime:string}
+const settings=ref<Settings>();const password=reactive({currentPassword:'',newPassword:'',confirm:''});const saving=ref(false);const auth=useAuthStore();const router=useRouter()
+async function load(){settings.value=await api<Settings>('/settings/system')}
+async function changePassword(){if(password.newPassword!==password.confirm)return ElMessage.error('两次输入的新密码不一致');saving.value=true;try{await api('/settings/account/password',{method:'PUT',body:jsonBody({currentPassword:password.currentPassword,newPassword:password.newPassword})});auth.user=null;ElMessage.success('密码已修改，请重新登录');await router.push('/login')}catch(error){ElMessage.error((error as Error).message)}finally{saving.value=false}}
+function size(v=0){return`${(v/1024**3).toFixed(1)} GiB`}
+onMounted(()=>load().catch(e=>ElMessage.error(e.message)))
+</script>
+<template><section class="page"><header class="page-heading"><div><div class="eyebrow">Preferences</div><h1>系统设置</h1><p class="subtitle">查看运行环境，并维护管理员访问密码。</p></div></header><el-row :gutter="22"><el-col :xs="24" :lg="14"><div class="surface" style="padding:24px"><h2>运行状态</h2><el-descriptions v-if="settings" :column="1" border><el-descriptions-item label="监听地址">{{settings.listen}}</el-descriptions-item><el-descriptions-item label="数据目录"><code>{{settings.dataDir}}</code></el-descriptions-item><el-descriptions-item label="单文件上传上限">{{size(settings.maxUploadBytes)}}</el-descriptions-item><el-descriptions-item label="预览缓存上限">{{size(settings.cacheMaxBytes)}}</el-descriptions-item><el-descriptions-item label="视频处理">{{settings.ffmpegAvailable?'FFmpeg 已就绪':'未检测到 FFmpeg，使用通用视频卡片'}}</el-descriptions-item></el-descriptions><el-skeleton v-else :rows="5" animated/></div></el-col><el-col :xs="24" :lg="10"><form class="surface" style="padding:24px" @submit.prevent="changePassword"><h2>修改密码</h2><p class="subtitle" style="margin-bottom:22px">修改成功后，所有设备都会退出登录。</p><el-form label-position="top"><el-form-item label="当前密码"><el-input v-model="password.currentPassword" type="password" show-password autocomplete="current-password"/></el-form-item><el-form-item label="新密码"><el-input v-model="password.newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 12 个字符"/></el-form-item><el-form-item label="确认新密码"><el-input v-model="password.confirm" type="password" show-password autocomplete="new-password"/></el-form-item></el-form><el-button type="primary" native-type="submit" :loading="saving">更新密码</el-button></form></el-col></el-row></section></template>
